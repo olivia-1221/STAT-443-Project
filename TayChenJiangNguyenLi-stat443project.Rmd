@@ -93,3 +93,414 @@ plot(pressure)
 ```
 
 Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+
+## BASELINE 1: Naive/Persistence
+```{r}
+persist_fc <- function(train, holdout, iprint = FALSE) {
+  n <- length(train)
+  n_holdout <- length(holdout)
+  mse <- 0
+  fcvec <- numeric(n_holdout)
+  
+  # first forecast
+  fc <- train[n]
+  yt <- holdout[1]
+  fcvec[1] <- fc
+  fcerror <- yt - fc
+  mse <- mse + fcerror^2
+  
+  # remaining forecasts
+  for (i in 2:n_holdout) {
+    yt <- holdout[i]
+    fc <- holdout[i-1]
+    fcvec[i] <- fc
+    fcerror <- yt - fc
+    mse <- mse + fcerror^2
+  }
+  
+  if (iprint) 
+    print(cbind(holdout, fcvec))
+  
+  rmse <- sqrt(mse / n_holdout)
+  return(list(fc = fcvec, rmse = rmse))
+}
+```
+
+## BASELINE 2: Training-set average
+```{r}
+iid_fc <- function(train, holdout, iprint = FALSE) {
+  n <- length(train)
+  n_holdout <- length(holdout)
+  average <- mean(train)
+  mse <- 0
+  fcvec <- numeric(n_holdout)
+
+  for (i in 1:n_holdout) {
+    yt <- holdout[i]
+    fc <- average
+    fcvec[i] <- fc
+    fcerror <- yt - fc
+    mse <- mse + fcerror^2
+  }
+  
+  if (iprint)
+    print(cbind(holdout, fcvec))
+  
+  rmse <- sqrt(mse / n_holdout)
+  return(list(fc = fcvec, rmse = rmse))
+}
+```
+
+## Method 1: Best exponential smoothing (allowing for trend and seasonality, if relevant)
+```{r}
+# Simple Exponential Smoothing
+esm_fc <- function(train, holdout, alpha, level, iprint = FALSE) {
+  n_holdout <- length(holdout)
+  sse <- 0
+  fcvec <- numeric(n_holdout)
+  
+  fc <- level
+  yt <- holdout[1]
+  level_new <- level
+  fcvec[1] <- fc
+  fcerror <- yt - fc
+  sse <- sse + fcerror^2
+  
+  for (i in 2:n_holdout) {
+    level_new <- alpha * holdout[i-1] + (1 - alpha) * level_new
+    
+    fc <- level_new
+    fcvec[i] <- fc
+    yt <- holdout[i]
+    fcerror <- yt - fc
+    sse <- sse + fcerror^2
+    
+    if (iprint) {
+      cat("i =", i, "| fc =", fc, "| y =", yt, "| level =", level_new, "\n")
+    }
+  }
+  
+  rmse <- sqrt(sse / n_holdout)
+  return(list(fc = fcvec, rmse = rmse))
+}
+```
+
+```{r}
+# Linear Exponential Smoothing
+lholt_fc <- function(train, holdout, alpha, beta, level, slope, iprint = FALSE) {
+  n_holdout <- length(holdout)
+  sse <- 0
+  fcvec <- numeric(n_holdout)
+  
+  # first forecast
+  fc <- level + slope
+  yt <- holdout[1]
+  newfc <- fc
+  fcvec[1] <- fc
+  fcerror <- yt - fc
+  sse <- sse + fcerror^2
+  
+  level_prev <- level
+  slope_prev <- slope
+  
+  if (iprint) {
+    cat("i = 1 | fc =", fc, "| y =", yt, "| level =", level_prev, "| slope =", slope_prev, "\n")
+  }
+  
+  # remaining forecasts
+  for (i in 2:n_holdout) {
+    level_new <- alpha * holdout[i-1] + (1 - alpha) * fc
+    slope_new <- beta * (level_new - level_prev) + (1 - beta) * slope_prev
+    
+    fc <- level_new + slope_new
+    fcvec[i] <- fc
+    yt <- holdout[i]
+    fcerror <- yt - fc
+    sse <- sse + fcerror^2
+    
+    if (iprint) {
+      cat("i =", i, "| fc =", fc, "| y =", yt, "| level =", level_new, "| slope =", slope_new, "\n")
+    }
+    
+    level_prev <- level_new
+    slope_prev <- slope_new
+  }
+  
+  rmse <- sqrt(sse / n_holdout)
+  return(list(fc = fcvec, rmse = rmse))
+}
+```
+
+```{r}
+# Additive Seasonal Exponential Smoothing
+aseason_fc <- function(train, holdout, alpha, beta, gamma, level, slope, season, iprint = FALSE) {
+  n_holdout <- length(holdout)
+  m <- length(season)
+  sse <- 0
+  fcvec <- numeric(n_holdout)
+  
+  # prev states from training end
+  level_prev <- level
+  slope_prev <- slope
+  
+  # helper: map i -> seasonal position in 1..d
+  spos <- function(i) ((i-1) %% m) + 1
+  
+  # First forecast
+  fc <- level_prev + slope_prev + season[spos(1)]
+  fcvec[1] <- fc
+  yt <- holdout[1]
+  fcerror <- yt - fc
+  sse <- sse + fcerror^2
+  
+  if (iprint) {
+    cat("i = 1 | fc =", fc, "| y =", yt, "| level =", level_prev, "| slope =", slope_prev, "| season =", season[spos(1)], "\n")
+  }
+  
+  # Remaining forecast
+  for (i in 2:n_holdout) {
+    # Seasonal of previous observation (i-1)
+    k_prev <- spos(i-1)
+    s_prev <- season[k_prev]
+    # Update using previous observation holdout[i-1]
+    level_new <- alpha * (holdout[i-1] - s_prev) + (1 - alpha) * (level_prev + slope_prev)
+    slope_new <- beta * (level_new - level_prev) + (1 - beta) * slope_prev
+    s_new <- gamma * (holdout[i-1] - level_new) + (1 - gamma) * s_prev
+    
+    # store updated seasonal state one full cycle later
+    season[k_prev] <- s_new
+    
+    # Seasonal of current forecast (i)
+    k_cur <- spos(i)
+    s_cur <- season[k_cur]
+    
+    # Forecast current observation using updated states + current seasonal
+    fc <- level_new + slope_new + s_cur
+    fcvec[i] <- fc
+    yt <- holdout[i]
+    fcerror <- yt - fc
+    sse <- sse + fcerror^2
+    
+    if (iprint) {
+      cat("i =", i, "| fc =", fc, "| y =", yt, "| level =", level_new, "| slope =", slope_new, "| season =", s_cur, "\n")
+    }
+    
+    # Update level and slope
+    level_prev <- level_new
+    slope_prev <- slope_new
+  }
+  
+  rmse <- sqrt(sse / n_holdout)
+  return(list(fc = fcvec, rmse = rmse))
+}
+```
+
+## Method 2: ARIMA
+```{r}
+arma_fc <- function(tsdata, ntrain, order, seasonal, method, traincoef, include.mean, iprint=F) {
+  obj = arima(tsdata, order=order, seasonal = seasonal, init=traincoef, fixed=traincoef,
+              method=method, include.mean=include.mean, optim.control=list(maxit=0)) # no log-likelihood iterations
+  fc = tsdata - obj$residuals
+
+  ntotal = length(tsdata)
+  holdout_fc = fc[(ntrain+1):ntotal]
+  holdout = tsdata[(ntrain+1):ntotal]
+  
+  if(iprint) print(cbind(holdout,holdout_fc))
+  
+  rmse = sqrt(mean((holdout-holdout_fc)^2))
+  return(list(rmse=rmse, fc=holdout_fc, residuals = obj$residuals))
+}
+```
+
+## Method 3: ARIMAX with lagged interest
+```{r}
+armax_fc <- function(tsdata, ntrain, order, seasonal, xreg, method, traincoef, include.mean, iprint=F) { 
+  obj = arima(tsdata, order=order, seasonal = seasonal, init=traincoef,
+              fixed=traincoef, method=method, include.mean=include.mean, 
+              xreg=xreg, optim.control=list(maxit=0))
+
+  fc = tsdata - obj$residuals
+  
+  ntotal = length(tsdata)
+  holdout_fc = fc[(ntrain+1):ntotal]
+  holdout = tsdata[(ntrain+1):ntotal]
+  
+  if(iprint) print(cbind(holdout,holdout_fc))
+  
+  rmse = sqrt(mean((holdout-holdout_fc)^2))
+  return(list(rmse=rmse, fc=holdout_fc, residuals = obj$residuals))
+}
+```
+
+### 3. Toronto
+```{r}
+toronto_nhpi_data <- read.csv("Full_Cities/toronto_full.csv")
+toronto_nhpi_ir_data <- read.csv("Extracted_Cities/toronto.csv")
+
+# Extract the NHPI
+toronto_nhpi <- toronto_nhpi_data$VALUE
+
+# Extract the one-month lag interest rate 
+toronto_irlag1 <- toronto_nhpi_ir_data$IR_lag1
+
+# Set the time window from 1981-2023
+toronto_ts <- ts(toronto_nhpi, start = c(1981,1), end = c(2023, 12), frequency = 12)
+toronto_ir_ts <- ts(toronto_irlag1, start = c(1981,1), end = c(2023, 12), frequency = 12)
+
+# Apply transformation for NHPI
+toronto_transformed_nhpi <- diff(log(toronto_ts))
+
+# Holdout design
+# Set training set from 1981-2021
+toronto_train_ts <- window(toronto_transformed_nhpi, end = c(2021,12))
+toronto_train_ir_xreg <- window(toronto_ir_ts, start = c(1981,2), end = c(2021,12))
+# Set holdout set from 2022-2023
+toronto_holdout_ts <- window(toronto_transformed_nhpi, start = c(2022,1))
+toronto_holdout_ir_xreg <- window(toronto_ir_ts, start = c(2022,1))
+```
+
+```{r}
+# Baseline 1 
+toronto_persist_fc <- persist_fc(toronto_train_ts, toronto_holdout_ts, iprint = F)
+
+# Baseline 2
+toronto_iid_fc <- iid_fc(toronto_train_ts, toronto_holdout_ts, iprint = F)
+```
+
+```{r}
+# Method 1
+ntrain <- length(toronto_train_ts)
+ntotal <- length(toronto_ts)-1
+
+toronto_transformed_nhpi_train <- toronto_transformed_nhpi[1:ntrain]
+toronto_transformed_nhpi_holdout <- toronto_transformed_nhpi[(ntrain+1):ntotal]
+
+# Simple Exponential Smoothing
+fit_expsmo <- HoltWinters(toronto_train_ts, beta = F, gamma = F)
+toronto_esm_fc <- esm_fc(toronto_transformed_nhpi_train, toronto_transformed_nhpi_holdout,
+                         alpha = fit_expsmo$alpha, level = fit_expsmo$coefficients["a"],
+                         iprint = F)
+# Linear Exponential Smoothing
+fit_hw <- HoltWinters(toronto_train_ts, gamma = F)
+toronto_holt_fc <- lholt_fc(toronto_transformed_nhpi_train, toronto_transformed_nhpi_holdout,
+                           alpha = fit_hw$alpha, beta = fit_hw$beta, 
+                           level = fit_hw$coefficients["a"], 
+                           slope = fit_hw$coefficients["b"], iprint = F)
+# Additive Seasonal Exponential Smoothing
+wafit <- HoltWinters(toronto_train_ts, seasonal = "additive")
+toronto_aseason_fc <- aseason_fc(toronto_transformed_nhpi_train,
+                                 toronto_transformed_nhpi_holdout, 
+                                 alpha = wafit$alpha, beta = wafit$beta, 
+                                 gamma = wafit$gamma, level = wafit$coef[1], 
+                                 slope = wafit$coef[2], season = wafit$coefficient[3:14],
+                                 iprint = F)
+
+# Compare RMSE
+rmse_esm <- cbind(toronto_esm_fc$rmse, toronto_holt_fc$rmse, toronto_aseason_fc$rmse)
+colnames(rmse_esm) <- c("esm", "lholt", "aseason")
+rmse_esm
+# Best exponential smoothing: Simple Exponential Smoothing
+```
+
+```{r}
+# Method 2
+toronto_transformed_nphi_auto <- forecast::auto.arima(toronto_train_ts)
+summary(toronto_transformed_nphi_auto) # 0.0064015
+resid_fit <- residuals(toronto_transformed_nphi_auto)
+acf(resid_fit, main = "ACF of ARIMA(1,0,2)(1,0,0)[12] residuals")
+
+# Compare with the other arima model
+manual_fit <- arima(toronto_train_ts, order = c(1,0,2), seasonal=list(order=c(1,0,0), period=12), method = "ML")
+summary(manual_fit) # RMSE: 0.006405747
+acf(residuals(manual_fit), main = "ACF of ARIMA(1,0,2)(1,0,0)[12] residuals")
+test1 <- arima(toronto_train_ts, order = c(1,0,1), seasonal=list(order=c(1,0,0), period=12), method = "ML")
+summary(test1) # RMSE: 0.006456026
+acf(residuals(test1), main = "ACF of ARIMA(1,0,1)(1,0,0)[12] residuals")
+test2 <- arima(toronto_train_ts, order = c(2,0,1), seasonal=list(order=c(1,0,0), period=12), method = "ML")
+summary(test2) # RMSE: 0.006410017
+acf(residuals(test2), main = "ACF of ARIMA(2,0,1)(1,0,0)[12] residuals")
+test3 <- arima(toronto_train_ts, order = c(2,0,2), seasonal=list(order=c(1,0,0), period=12), method = "ML")
+summary(test3) # RMSE: 0.006405754
+acf(residuals(test3), main = "ACF of ARIMA(2,0,2)(1,0,0)[12] residuals")
+test4 <- arima(toronto_train_ts, order = c(1,0,2), seasonal=list(order=c(1,0,1), period=12), method = "ML")
+summary(test4) # RMSE: 0.006404998
+acf(residuals(test4), main = "ACF of ARIMA(1,0,2)(1,0,1)[12] residuals")
+test5 <- arima(toronto_train_ts, order = c(1,0,1), seasonal=list(order=c(1,0,1), period=12), method = "ML")
+summary(test5) # RMSE: 0.006454211
+acf(residuals(test5), main = "ACF of ARIMA(1,0,1)(1,0,1)[12] residuals")
+
+# Compare AIC values
+aic = cbind(manual_fit$aic, test1$aic, test2$aic, test3$aic, test4$aic, test5$aic)
+colnames(aic) = c("manual_fit", "test1", "test2", "test3", "test4", "test5")
+aic
+# Best (based on lowest AIC and ACF plot): manual_fit, ARIMA(1,0,2)(1,0,0)[12]
+
+order <- c(1,0,2)
+seasonal <- list(order = c(1,0,0), period = 12)
+# Fit the model to the training data
+train_arima_model <- arima(toronto_train_ts, order = order, seasonal = seasonal, method = "ML", include.mean = T)
+# Result the moving 1-step ahead forecast for holdout set
+arima_results <- arma_fc(tsdata = toronto_transformed_nhpi, ntrain = length(toronto_train_ts), order = order, seasonal = seasonal, method = "ML", traincoef = coef(train_arima_model), include.mean = T)
+arima_results$rmse
+```
+
+```{r}
+# Method 3
+toronto_fit_arimax <- forecast::auto.arima(toronto_train_ts, xreg = toronto_train_ir_xreg)
+summary(toronto_fit_arimax)
+
+order <- c(1,0,2)
+seasonal <- list(order = c(1,0,0), period = 12)
+# Fit model to the training data
+train_arimax_model <- arima(toronto_train_ts, order = order, seasonal = seasonal, xreg = toronto_train_ir_xreg, method = "ML", include.mean = T)
+# Result the moving 1-step ahead forecast for holdout set
+arimax_results <- armax_fc(tsdata = toronto_transformed_nhpi, ntrain = length(toronto_train_ts), order = order, seasonal = seasonal, xreg = toronto_irlag1[-1], method = "ML", traincoef = coef(train_arimax_model), include.mean = T)
+```
+
+```{r}
+# OUTPUT
+# 1. TIME SERIES PLOT
+plot(toronto_ts)
+# log-diff transformation
+plot(toronto_transformed_ts)
+# ts plot from persistence
+plot(ts(toronto_persist_fc$fc, start = c(2022, 1), frequency = 12))
+# ts plot from average
+plot(ts(toronto_iid_fc$fc, start = c(2022, 1), frequency = 12))
+# ts plot from simple exponential smoothing
+plot(ts(toronto_esm_fc$fc, start = c(2022, 1), frequency = 12))
+# ts plot from arima
+plot(ts(arima_results$fc, start = c(2022, 1), frequency = 12))
+# ts plot from arimax
+plot(ts(arimax_results$fc, start = c(2022, 1), frequency = 12))
+# ts plot of holdout set
+plot(ts(toronto_holdout_ts, start = c(2022, 1), frequency = 12))
+
+# 2. ACF PLOT
+# ACF and PACF of training set
+acf(toronto_train_ts, main = "ACF Plot: of Log-differenced NHPI: Toronto Training Set")
+pacf(toronto_train_ts, main = "PACF Plot: of Log-differenced NHPI: Toronto Training Set")
+# ACF from best arima model
+resid_fit <- residuals(toronto_transformed_nphi_auto)
+acf(resid_fit, main = "ACF of ARIMA(1,0,2)(1,0,0)[12] residuals")
+# ACF from best arimax model
+resid_fit <- residuals(toronto_fit_arimax)
+acf(resid_fit, main = "ACF of ARIMAX(1,0,2)(1,0,0)[12] residuals")
+
+# 3. SUMMARY STATISTICS
+summary(toronto_train_ts)
+summary(toronto_holdout_ts)
+# summary of best arima model
+summary(toronto_transformed_nphi_auto)
+# summary of best arimax model
+summary(toronto_fit_arimax)
+# ccf between log-differenced NHPI and the lagged interest rate
+ccf(toronto_irlag1[-1], diff(log(toronto_nhpi)))
+
+# 4. RMSE
+rmse = cbind(toronto_persist_fc$rmse, toronto_iid_fc$rmse,
+             toronto_esm_fc$rmse, arima_results$rmse, arimax_results$rmse)
+colnames(rmse) = c("persist", "iid", "esm", "arima", "arimax")
+print(round(rmse, 3))
+```
