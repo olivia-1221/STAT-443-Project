@@ -2,99 +2,74 @@
 title: "TayChenJiangNguyenLi-stat443project"
 author: "TayChenJiangNguyenLi"
 date: "2026-03-16"
-output: pdf_document
+output:
+  html_document:
+    df_print: paged
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-## R Markdown
-
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
-
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
-
-```{r}
+## Loading packages
+```{r, message=FALSE, warning=FALSE}
 library(readr)
 library(dplyr)
 library(lubridate)
+```
 
-# Cover 1981-01 to 2025-12
-nhpi_full <- read.csv(
-  "18100205.csv",
-  na.strings = c("..", "NA", "")
-) %>%
-  mutate(
-    REF_DATE = as.Date(paste0(REF_DATE, "-01")),
-    REF_DATE_ym = format(REF_DATE, "%Y-%m")
-  )
-head(nhpi_full)
+## Reading the data
+```{r, results='hide'}
+# Covering 1981-01 to 2025-12
+nhpi_full <- read.csv("18100205.csv", na.strings = c("..", "NA", "")) %>%
+  mutate(REF_DATE = as.Date(paste0(REF_DATE, "-01")),
+         REF_DATE_ym = format(REF_DATE, "%Y-%m"))
+# head(nhpi_full)
 
-# Cover 1981-01 to 2023-12
-ir <- read_csv(
-  "IRSTCB01CAM156N.csv",
-  show_col_types = FALSE
-) %>%
-  rename(
-    REF_DATE = observation_date,
-    IR = IRSTCB01CAM156N
-  ) %>%
-  mutate(
-    REF_DATE = as.Date(REF_DATE),
-    REF_DATE_ym = format(REF_DATE, "%Y-%m"),
-    IR = as.numeric(IR)
-  ) %>%
+# Covering 1981-01 to 2023-12
+ir <- read_csv("IRSTCB01CAM156N.csv",show_col_types = FALSE) %>%
+  rename(REF_DATE = observation_date,
+         IR = IRSTCB01CAM156N) %>%
+  mutate(REF_DATE = as.Date(REF_DATE),
+         REF_DATE_ym = format(REF_DATE, "%Y-%m"),
+         IR = as.numeric(IR)) %>%
   filter(!is.na(IR))
-head(ir)
+# head(ir)
 
-# Combine dataset for ARMAX (cover the overlap only)
+# Combining the dataset for ARMAX (cover the overlap only)
 nhpi_ir <- nhpi_full %>%
-  left_join(
-    ir %>% select(REF_DATE_ym, IR),
-    by = "REF_DATE_ym"
-  ) %>%
+  left_join(ir %>% select(REF_DATE_ym, IR),
+            by = "REF_DATE_ym") %>%
   filter(REF_DATE <= as.Date("2023-12-01"))
+# head(nhpi_ir)
 
-head(nhpi_ir)
-# Lagged interest rate
+# Getting lagged interest rate
 nhpi_ir <- nhpi_ir %>%
   group_by(GEO, New.housing.price.indexes) %>%
   arrange(REF_DATE) %>%
-  mutate(
-    IR_lag1 = lag(IR, 1),
-    IR_lag2 = lag(IR, 2)
-  ) %>%
+  mutate(IR_lag1 = lag(IR, 1),
+         IR_lag2 = lag(IR, 2)) %>%
   ungroup()
+# head(nhpi_ir)
 
-head(nhpi_ir)
-
-# Date coverage
+# Checking date coverage
 range(nhpi_full$REF_DATE)  # should include 1981-01-01 to 2025-12-01 (or close)
 range(ir$REF_DATE)         # should include 1981-01-01 to 2023-12-01
 range(nhpi_ir$REF_DATE)    # should include 1981-01-01 to 2023-12-01
 
-# Any missing IR after merge? (should be basically none within overlap)
+# Checking if there's any missing IR after merge? (should be basically none within overlap)
 mean(is.na(nhpi_ir$IR))
 
-# Check lags (first month per series will be NA)
+# Checking lags (first month per series will be NA)
 nhpi_ir %>%
   filter(GEO == "Canada", New.housing.price.indexes == "Total (house and land)") %>%
-  select(REF_DATE, VALUE, IR, IR_lag1, IR_lag2) %>%
-  head(5)
+  select(REF_DATE, VALUE, IR, IR_lag1, IR_lag2) # %>%
+  # head(5)
 ```
 
-## Including Plots
+## Defining functions
 
-You can also embed plots, for example:
-
-```{r pressure, echo=FALSE}
-plot(pressure)
-```
-
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
-
-## BASELINE 1: Naive/Persistence
+### Baseline 1: Naive/Persistence
 ```{r}
 persist_fc <- function(train, holdout, iprint = FALSE) {
   n <- length(train)
@@ -126,7 +101,7 @@ persist_fc <- function(train, holdout, iprint = FALSE) {
 }
 ```
 
-## BASELINE 2: Training-set average
+### Baseline 2: Training-Set Average
 ```{r}
 iid_fc <- function(train, holdout, iprint = FALSE) {
   n <- length(train)
@@ -151,7 +126,7 @@ iid_fc <- function(train, holdout, iprint = FALSE) {
 }
 ```
 
-## Method 1: Best exponential smoothing (allowing for trend and seasonality, if relevant)
+### Method 1: Best Exponential Smoothing (allowing for trend and seasonality, if relevant)
 ```{r}
 # Simple Exponential Smoothing
 esm_fc <- function(train, holdout, alpha, level, iprint = FALSE) {
@@ -295,7 +270,7 @@ aseason_fc <- function(train, holdout, alpha, beta, gamma, level, slope, season,
 }
 ```
 
-## Method 2: ARIMA
+### Method 2: ARIMA
 ```{r}
 arma_fc <- function(tsdata, ntrain, order, seasonal, method, traincoef, include.mean, iprint=F) {
   obj = arima(tsdata, order=order, seasonal = seasonal, init=traincoef, fixed=traincoef,
@@ -313,7 +288,7 @@ arma_fc <- function(tsdata, ntrain, order, seasonal, method, traincoef, include.
 }
 ```
 
-## Method 3: ARIMAX with lagged interest
+### Method 3: ARIMAX with lagged interest
 ```{r}
 armax_fc <- function(tsdata, ntrain, order, seasonal, xreg, method, traincoef, include.mean, iprint=F) { 
   obj = arima(tsdata, order=order, seasonal = seasonal, init=traincoef,
@@ -333,33 +308,231 @@ armax_fc <- function(tsdata, ntrain, order, seasonal, xreg, method, traincoef, i
 }
 ```
 
-### 3. Toronto
+## Analyzing Montreal
+
+### Setting up
 ```{r}
+# Reading the data
+montreal_nhpi_data <- read.csv("Full_Cities/montreal_full.csv")
+montreal_nhpi_ir_data <- read.csv("Extracted_Cities/montreal.csv")
+
+# Extracting the NHPI
+montreal_nhpi <- montreal_nhpi_data$VALUE
+
+# Extracting the one-month lag interest rate
+montreal_irlag1 <- montreal_nhpi_ir_data$IR_lag1
+
+# Setting the time window from 1981-2023
+montreal_ts <- ts(montreal_nhpi, start = c(1981,1), end = c(2023, 12), frequency = 12)
+montreal_ir_ts <- ts(montreal_irlag1, start = c(1981,1), end = c(2023, 12), frequency = 12)
+
+# Applying a transformation for NHPI
+montreal_transformed_nhpi <- diff(log(montreal_ts))
+
+# Setting a training set from 1981-2021
+montreal_train_ts <- window(montreal_transformed_nhpi, end = c(2021,12))
+montreal_train_ir_xreg <- window(montreal_ir_ts, start = c(1981,2), end = c(2021,12))
+
+# Setting a holdout set from 2022-2023
+montreal_holdout_ts <- window(montreal_transformed_nhpi, start = c(2022,1))
+montreal_holdout_ir_xreg <- window(montreal_ir_ts, start = c(2022,1))
+```
+
+### Doing the baseline forecasts
+```{r}
+# Baseline 1: Naive/Persistence
+montreal_persist_fc <- persist_fc(montreal_train_ts, montreal_holdout_ts, iprint = F)
+
+# Baseline 2: Training-Set Average
+montreal_iid_fc <- iid_fc(montreal_train_ts, montreal_holdout_ts, iprint = F)
+```
+
+### Doing the exponential smoothing forecasts
+```{r}
+# Method 1
+ntrain <- length(montreal_train_ts)
+ntotal <- length(montreal_ts)-1
+
+montreal_transformed_nhpi_train <- montreal_transformed_nhpi[1:ntrain]
+montreal_transformed_nhpi_holdout <- montreal_transformed_nhpi[(ntrain+1):ntotal]
+
+# Simple Exponential Smoothing
+fit_expsmo <- HoltWinters(montreal_train_ts, beta = F, gamma = F)
+montreal_esm_fc <- esm_fc(montreal_transformed_nhpi_train, montreal_transformed_nhpi_holdout,
+                         alpha = fit_expsmo$alpha, level = fit_expsmo$coefficients["a"],
+                         iprint = F)
+
+# Linear Exponential Smoothing
+fit_hw <- HoltWinters(montreal_train_ts, gamma = F)
+montreal_holt_fc <- lholt_fc(montreal_transformed_nhpi_train, montreal_transformed_nhpi_holdout,
+                           alpha = fit_hw$alpha, beta = fit_hw$beta, 
+                           level = fit_hw$coefficients["a"], 
+                           slope = fit_hw$coefficients["b"], iprint = F)
+
+# Additive Seasonal Exponential Smoothing
+wafit <- HoltWinters(montreal_train_ts, seasonal = "additive")
+montreal_aseason_fc <- aseason_fc(montreal_transformed_nhpi_train,
+                                 montreal_transformed_nhpi_holdout, 
+                                 alpha = wafit$alpha, beta = wafit$beta, 
+                                 gamma = wafit$gamma, level = wafit$coef[1], 
+                                 slope = wafit$coef[2], season = wafit$coefficient[3:14],
+                                 iprint = F)
+
+# Comparing RMSE
+rmse_esm <- cbind(montreal_esm_fc$rmse, montreal_holt_fc$rmse, montreal_aseason_fc$rmse)
+colnames(rmse_esm) <- c("esm", "lholt", "aseason") # RMSE: 0.0079, 0.0077, 0.0088
+rmse_esm
+
+# Best exponential smoothing method: Linear Exponential Smoothing
+```
+
+### Doing the ARIMA forecasts
+```{r, warnings=FALSE}
+# Method 2
+montreal_transformed_nphi_auto <- forecast::auto.arima(montreal_train_ts)
+summary(montreal_transformed_nphi_auto) # 0.0048783
+resid_fit <- residuals(montreal_transformed_nphi_auto)
+acf(resid_fit, main = "ACF of ARIMA(2,0,5)(2,0,1)[12] residuals")
+
+# Comparing with the other ARIMA models
+manual_fit <- arima(montreal_train_ts, order = c(2,0,5),
+                    seasonal = list(order = c(2,0,1), period = 12), method = "ML")
+summary(manual_fit) # RMSE: 0.004903117
+acf(residuals(manual_fit), main = "ACF of ARIMA(2,0,5)(2,0,1)[12] residuals")
+test1 <- arima(montreal_train_ts, order = c(2,0,4),
+               seasonal = list(order = c(2,0,1), period = 12), method = "ML")
+summary(test1) # RMSE: 0.004919859
+acf(residuals(test1), main = "ACF of ARIMA(2,0,4)(2,0,1)[12] residuals")
+test2 <- arima(montreal_train_ts, order = c(3,0,4),
+               seasonal = list(order = c(2,0,1), period = 12), method = "ML")
+summary(test2) # RMSE: 0.004857711
+acf(residuals(test2), main = "ACF of ARIMA(3,0,4)(2,0,1)[12] residuals")
+test3 <- arima(montreal_train_ts, order = c(3,0,5),
+               seasonal = list(order = c(2,0,1), period = 12), method = "ML")
+summary(test3) # RMSE: 0.004852676
+acf(residuals(test3), main = "ACF of ARIMA(3,0,5)(2,0,1)[12] residuals")
+test4 <- arima(montreal_train_ts, order = c(2,0,5),
+               seasonal = list(order = c(2,0,2), period = 12), method = "ML")
+summary(test4) # RMSE: 0.004908301
+acf(residuals(test4), main = "ACF of ARIMA(2,0,5)(2,0,2)[12] residuals")
+test5 <- arima(montreal_train_ts, order = c(2,0,4),
+               seasonal = list(order = c(2,0,2), period = 12), method = "ML")
+summary(test5) # RMSE: 0.004891118
+acf(residuals(test5), main = "ACF of ARIMA(2,0,4)(2,0,2)[12] residuals")
+
+# Comparing AIC values
+aic = cbind(manual_fit$aic, test1$aic, test2$aic, test3$aic, test4$aic, test5$aic)
+colnames(aic) = c("manual_fit", "test1", "test2", "test3", "test4", "test5")
+aic
+# Best (based on lowest AIC and ACF plot): test3, ARIMA(3,0,5)(2,0,1)[12]
+
+order <- c(3,0,5)
+seasonal <- list(order = c(2,0,1), period = 12)
+# Fit the model to the training data
+train_arima_model <- arima(montreal_train_ts, order = order,
+                           seasonal = seasonal, method = "ML", include.mean = T)
+# Result the moving 1-step ahead forecast for holdout set
+arima_results <- arma_fc(tsdata = montreal_transformed_nhpi,
+                         ntrain = length(montreal_train_ts),
+                         order = order, seasonal = seasonal, method = "ML",
+                         traincoef = coef(train_arima_model), include.mean = T)
+arima_results$rmse
+```
+### Doing the ARIMAX forecasts with lagged interest
+```{r}
+# Method 3
+montreal_fit_arimax <- forecast::auto.arima(montreal_train_ts, xreg = montreal_train_ir_xreg)
+summary(montreal_fit_arimax)
+
+order <- c(3,0,5)
+seasonal <- list(order = c(2,0,1), period = 12)
+# Fitting a model to the training data
+train_arimax_model <- arima(montreal_train_ts, order = order, seasonal = seasonal,
+                            xreg = montreal_train_ir_xreg, method = "ML", include.mean = T)
+# Getting the result of the moving 1-step ahead forecast for holdout set
+arimax_results <- armax_fc(tsdata = montreal_transformed_nhpi,
+                           ntrain = length(montreal_train_ts), order = order,
+                           seasonal = seasonal, xreg = montreal_irlag1[-1],
+                           method = "ML", traincoef = coef(train_arimax_model), include.mean = T)
+```
+### Viewing the results of Montreal's analyses
+```{r}
+# 1. TIME SERIES PLOT
+plot(montreal_ts)
+# log-diff transformation
+# plot(montreal_transformed_ts) # NOTE: this object doesn't exist
+# ts plot from persistence
+plot(ts(montreal_persist_fc$fc, start = c(2022, 1), frequency = 12))
+# ts plot from average
+plot(ts(montreal_iid_fc$fc, start = c(2022, 1), frequency = 12))
+# ts plot from simple exponential smoothing
+plot(ts(montreal_esm_fc$fc, start = c(2022, 1), frequency = 12))
+# ts plot from arima
+plot(ts(arima_results$fc, start = c(2022, 1), frequency = 12))
+# ts plot from arimax
+plot(ts(arimax_results$fc, start = c(2022, 1), frequency = 12))
+# ts plot of holdout set
+plot(ts(montreal_holdout_ts, start = c(2022, 1), frequency = 12))
+
+# 2. ACF PLOT
+# ACF and PACF of training set
+acf(montreal_train_ts, main = "ACF Plot: of Log-differenced NHPI: Montreal Training Set")
+pacf(montreal_train_ts, main = "PACF Plot: of Log-differenced NHPI: Montreal Training Set")
+# ACF from best ARIMA model
+resid_fit <- residuals(montreal_transformed_nphi_auto)
+acf(resid_fit, main = "ACF of ARIMA(3,0,5)(2,0,1)[12] residuals")
+# ACF from best ARIMAX model
+resid_fit <- residuals(montreal_fit_arimax)
+acf(resid_fit, main = "ACF of ARIMAX(3,0,5)(2,0,1)[12] residuals")
+
+# 3. SUMMARY STATISTICS
+summary(montreal_train_ts)
+summary(montreal_holdout_ts)
+# summary of best ARIMA model
+summary(montreal_transformed_nphi_auto)
+# summary of best ARIMAX model
+summary(montreal_fit_arimax)
+# CCF between log-differenced NHPI and the lagged interest rate
+ccf(montreal_irlag1[-1], diff(log(montreal_nhpi)))
+
+# 4. RMSE
+rmse = cbind(montreal_persist_fc$rmse, montreal_iid_fc$rmse,
+             montreal_esm_fc$rmse, arima_results$rmse, arimax_results$rmse)
+colnames(rmse) = c("persist", "iid", "esm", "arima", "arimax")
+print(round(rmse, 3))
+```
+
+## Analyzing Toronto
+
+### Setting up
+```{r}
+# Reading the data
 toronto_nhpi_data <- read.csv("Full_Cities/toronto_full.csv")
 toronto_nhpi_ir_data <- read.csv("Extracted_Cities/toronto.csv")
 
-# Extract the NHPI
+# Extracting the NHPI
 toronto_nhpi <- toronto_nhpi_data$VALUE
 
-# Extract the one-month lag interest rate 
+# Extracting the one-month lag interest rate
 toronto_irlag1 <- toronto_nhpi_ir_data$IR_lag1
 
-# Set the time window from 1981-2023
+# Setting the time window from 1981-2023
 toronto_ts <- ts(toronto_nhpi, start = c(1981,1), end = c(2023, 12), frequency = 12)
 toronto_ir_ts <- ts(toronto_irlag1, start = c(1981,1), end = c(2023, 12), frequency = 12)
 
-# Apply transformation for NHPI
+# Applying a transformation for NHPI
 toronto_transformed_nhpi <- diff(log(toronto_ts))
 
-# Holdout design
-# Set training set from 1981-2021
+# Setting a training set from 1981-2021
 toronto_train_ts <- window(toronto_transformed_nhpi, end = c(2021,12))
 toronto_train_ir_xreg <- window(toronto_ir_ts, start = c(1981,2), end = c(2021,12))
-# Set holdout set from 2022-2023
+
+# Setting a holdout set from 2022-2023
 toronto_holdout_ts <- window(toronto_transformed_nhpi, start = c(2022,1))
 toronto_holdout_ir_xreg <- window(toronto_ir_ts, start = c(2022,1))
 ```
 
+### Doing the baseline forecasts
 ```{r}
 # Baseline 1 
 toronto_persist_fc <- persist_fc(toronto_train_ts, toronto_holdout_ts, iprint = F)
@@ -368,6 +541,7 @@ toronto_persist_fc <- persist_fc(toronto_train_ts, toronto_holdout_ts, iprint = 
 toronto_iid_fc <- iid_fc(toronto_train_ts, toronto_holdout_ts, iprint = F)
 ```
 
+### Doing the exponential smoothing forecasts
 ```{r}
 # Method 1
 ntrain <- length(toronto_train_ts)
@@ -381,12 +555,14 @@ fit_expsmo <- HoltWinters(toronto_train_ts, beta = F, gamma = F)
 toronto_esm_fc <- esm_fc(toronto_transformed_nhpi_train, toronto_transformed_nhpi_holdout,
                          alpha = fit_expsmo$alpha, level = fit_expsmo$coefficients["a"],
                          iprint = F)
+
 # Linear Exponential Smoothing
 fit_hw <- HoltWinters(toronto_train_ts, gamma = F)
 toronto_holt_fc <- lholt_fc(toronto_transformed_nhpi_train, toronto_transformed_nhpi_holdout,
                            alpha = fit_hw$alpha, beta = fit_hw$beta, 
                            level = fit_hw$coefficients["a"], 
                            slope = fit_hw$coefficients["b"], iprint = F)
+
 # Additive Seasonal Exponential Smoothing
 wafit <- HoltWinters(toronto_train_ts, seasonal = "additive")
 toronto_aseason_fc <- aseason_fc(toronto_transformed_nhpi_train,
@@ -396,41 +572,49 @@ toronto_aseason_fc <- aseason_fc(toronto_transformed_nhpi_train,
                                  slope = wafit$coef[2], season = wafit$coefficient[3:14],
                                  iprint = F)
 
-# Compare RMSE
+# Comparing RMSE
 rmse_esm <- cbind(toronto_esm_fc$rmse, toronto_holt_fc$rmse, toronto_aseason_fc$rmse)
 colnames(rmse_esm) <- c("esm", "lholt", "aseason")
 rmse_esm
-# Best exponential smoothing: Simple Exponential Smoothing
+
+# Best exponential smoothing method: Simple Exponential Smoothing
 ```
 
+### Doing the ARIMA forecasts
 ```{r}
 # Method 2
 toronto_transformed_nphi_auto <- forecast::auto.arima(toronto_train_ts)
-summary(toronto_transformed_nphi_auto) # 0.0064015
+summary(toronto_transformed_nphi_auto) # 0.0064057
 resid_fit <- residuals(toronto_transformed_nphi_auto)
 acf(resid_fit, main = "ACF of ARIMA(1,0,2)(1,0,0)[12] residuals")
 
-# Compare with the other arima model
-manual_fit <- arima(toronto_train_ts, order = c(1,0,2), seasonal=list(order=c(1,0,0), period=12), method = "ML")
+# Comparing with the other ARIMA models
+manual_fit <- arima(toronto_train_ts, order = c(1,0,2),
+                    seasonal = list(order = c(1,0,0), period = 12), method = "ML")
 summary(manual_fit) # RMSE: 0.006405747
 acf(residuals(manual_fit), main = "ACF of ARIMA(1,0,2)(1,0,0)[12] residuals")
-test1 <- arima(toronto_train_ts, order = c(1,0,1), seasonal=list(order=c(1,0,0), period=12), method = "ML")
+test1 <- arima(toronto_train_ts, order = c(1,0,1),
+               seasonal = list(order = c(1,0,0), period = 12), method = "ML")
 summary(test1) # RMSE: 0.006456026
 acf(residuals(test1), main = "ACF of ARIMA(1,0,1)(1,0,0)[12] residuals")
-test2 <- arima(toronto_train_ts, order = c(2,0,1), seasonal=list(order=c(1,0,0), period=12), method = "ML")
+test2 <- arima(toronto_train_ts, order = c(2,0,1),
+               seasonal = list(order = c(1,0,0), period = 12), method = "ML")
 summary(test2) # RMSE: 0.006410017
 acf(residuals(test2), main = "ACF of ARIMA(2,0,1)(1,0,0)[12] residuals")
-test3 <- arima(toronto_train_ts, order = c(2,0,2), seasonal=list(order=c(1,0,0), period=12), method = "ML")
+test3 <- arima(toronto_train_ts, order = c(2,0,2),
+               seasonal = list(order = c(1,0,0), period = 12), method = "ML")
 summary(test3) # RMSE: 0.006405754
 acf(residuals(test3), main = "ACF of ARIMA(2,0,2)(1,0,0)[12] residuals")
-test4 <- arima(toronto_train_ts, order = c(1,0,2), seasonal=list(order=c(1,0,1), period=12), method = "ML")
+test4 <- arima(toronto_train_ts, order = c(1,0,2),
+               seasonal = list(order = c(1,0,1), period = 12), method = "ML")
 summary(test4) # RMSE: 0.006404998
 acf(residuals(test4), main = "ACF of ARIMA(1,0,2)(1,0,1)[12] residuals")
-test5 <- arima(toronto_train_ts, order = c(1,0,1), seasonal=list(order=c(1,0,1), period=12), method = "ML")
+test5 <- arima(toronto_train_ts, order = c(1,0,1),
+               seasonal = list(order = c(1,0,1), period = 12), method = "ML")
 summary(test5) # RMSE: 0.006454211
 acf(residuals(test5), main = "ACF of ARIMA(1,0,1)(1,0,1)[12] residuals")
 
-# Compare AIC values
+# Comparing AIC values
 aic = cbind(manual_fit$aic, test1$aic, test2$aic, test3$aic, test4$aic, test5$aic)
 colnames(aic) = c("manual_fit", "test1", "test2", "test3", "test4", "test5")
 aic
@@ -438,13 +622,18 @@ aic
 
 order <- c(1,0,2)
 seasonal <- list(order = c(1,0,0), period = 12)
-# Fit the model to the training data
-train_arima_model <- arima(toronto_train_ts, order = order, seasonal = seasonal, method = "ML", include.mean = T)
-# Result the moving 1-step ahead forecast for holdout set
-arima_results <- arma_fc(tsdata = toronto_transformed_nhpi, ntrain = length(toronto_train_ts), order = order, seasonal = seasonal, method = "ML", traincoef = coef(train_arima_model), include.mean = T)
+# Fitting the model to the training data
+train_arima_model <- arima(toronto_train_ts, order = order,
+                           seasonal = seasonal, method = "ML", include.mean = T)
+# Getting the result of the moving 1-step ahead forecast for holdout set
+arima_results <- arma_fc(tsdata = toronto_transformed_nhpi,
+                         ntrain = length(toronto_train_ts), order = order,
+                         seasonal = seasonal, method = "ML",
+                         traincoef = coef(train_arima_model), include.mean = T)
 arima_results$rmse
 ```
 
+### Doing the ARIMAX forecasts with lagged interest
 ```{r}
 # Method 3
 toronto_fit_arimax <- forecast::auto.arima(toronto_train_ts, xreg = toronto_train_ir_xreg)
@@ -452,27 +641,27 @@ summary(toronto_fit_arimax)
 
 order <- c(1,0,2)
 seasonal <- list(order = c(1,0,0), period = 12)
-# Fit model to the training data
+# Fitting a model to the training data
 train_arimax_model <- arima(toronto_train_ts, order = order, seasonal = seasonal, xreg = toronto_train_ir_xreg, method = "ML", include.mean = T)
-# Result the moving 1-step ahead forecast for holdout set
+# Getting the result of the moving 1-step ahead forecast for holdout set
 arimax_results <- armax_fc(tsdata = toronto_transformed_nhpi, ntrain = length(toronto_train_ts), order = order, seasonal = seasonal, xreg = toronto_irlag1[-1], method = "ML", traincoef = coef(train_arimax_model), include.mean = T)
 ```
 
+### Viewing the results of Toronto's analyses
 ```{r}
-# OUTPUT
 # 1. TIME SERIES PLOT
 plot(toronto_ts)
 # log-diff transformation
-plot(toronto_transformed_ts)
+# plot(toronto_transformed_ts) # NOTE: this object doesn't exist
 # ts plot from persistence
 plot(ts(toronto_persist_fc$fc, start = c(2022, 1), frequency = 12))
 # ts plot from average
 plot(ts(toronto_iid_fc$fc, start = c(2022, 1), frequency = 12))
 # ts plot from simple exponential smoothing
 plot(ts(toronto_esm_fc$fc, start = c(2022, 1), frequency = 12))
-# ts plot from arima
+# ts plot from ARIMA
 plot(ts(arima_results$fc, start = c(2022, 1), frequency = 12))
-# ts plot from arimax
+# ts plot from ARIMAX
 plot(ts(arimax_results$fc, start = c(2022, 1), frequency = 12))
 # ts plot of holdout set
 plot(ts(toronto_holdout_ts, start = c(2022, 1), frequency = 12))
@@ -481,19 +670,19 @@ plot(ts(toronto_holdout_ts, start = c(2022, 1), frequency = 12))
 # ACF and PACF of training set
 acf(toronto_train_ts, main = "ACF Plot: of Log-differenced NHPI: Toronto Training Set")
 pacf(toronto_train_ts, main = "PACF Plot: of Log-differenced NHPI: Toronto Training Set")
-# ACF from best arima model
+# ACF from best ARIMA model
 resid_fit <- residuals(toronto_transformed_nphi_auto)
 acf(resid_fit, main = "ACF of ARIMA(1,0,2)(1,0,0)[12] residuals")
-# ACF from best arimax model
+# ACF from best ARIMAX model
 resid_fit <- residuals(toronto_fit_arimax)
 acf(resid_fit, main = "ACF of ARIMAX(1,0,2)(1,0,0)[12] residuals")
 
 # 3. SUMMARY STATISTICS
 summary(toronto_train_ts)
 summary(toronto_holdout_ts)
-# summary of best arima model
+# summary of best ARIMA model
 summary(toronto_transformed_nphi_auto)
-# summary of best arimax model
+# summary of best ARIMAX model
 summary(toronto_fit_arimax)
 # ccf between log-differenced NHPI and the lagged interest rate
 ccf(toronto_irlag1[-1], diff(log(toronto_nhpi)))
