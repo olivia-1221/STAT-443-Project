@@ -3,6 +3,7 @@ title: "TayChenJiangNguyenLi-stat443project"
 author: "TayChenJiangNguyenLi"
 date: "2026-03-16"
 output:
+  pdf_document: default
   html_document:
     df_print: paged
 ---
@@ -693,3 +694,254 @@ rmse = cbind(toronto_persist_fc$rmse, toronto_iid_fc$rmse,
 colnames(rmse) = c("persist", "iid", "esm", "arima", "arimax")
 print(round(rmse, 3))
 ```
+
+
+## Analyzing Vancouver
+
+### Setting up
+```{r}
+# Reading the data
+vancouver_nhpi_data <- read.csv("Full_Cities/vancouver_full.csv")
+vancouver_nhpi_ir_data <- read.csv("Extracted_Cities/vancouver.csv")
+
+# Extracting the NHPI
+vancouver_nhpi <- vancouver_nhpi_data$VALUE
+
+# Extracting the one-month lag interest rate
+vancouver_irlag1 <- vancouver_nhpi_ir_data$IR_lag1
+
+# Setting the time window from 1981-2023
+vancouver_ts <- ts(vancouver_nhpi, start = c(1981,1), end = c(2023,12), frequency = 12)
+vancouver_ir_ts <- ts(vancouver_irlag1, start = c(1981,1), end = c(2023,12), frequency = 12)
+
+# Applying a transformation for NHPI
+vancouver_transformed_nhpi <- diff(log(vancouver_ts))
+
+# Setting a training set from 1981-2021
+vancouver_train_ts <- window(vancouver_transformed_nhpi, end = c(2021,12))
+vancouver_train_ir_xreg <- window(vancouver_ir_ts, start = c(1981,2), end = c(2021,12))
+
+# Setting a holdout set from 2022-2023
+vancouver_holdout_ts <- window(vancouver_transformed_nhpi, start = c(2022,1))
+vancouver_holdout_ir_xreg <- window(vancouver_ir_ts, start = c(2022,1))
+```
+
+### Doing the baseline forecasts
+```{r}
+# Baseline 1: Naive/Persistence
+vancouver_persist_fc <- persist_fc(vancouver_train_ts,vancouver_holdout_ts, iprint = FALSE)
+
+# Baseline 2: Training-Set Average
+vancouver_iid_fc <- iid_fc(vancouver_train_ts, vancouver_holdout_ts, iprint = FALSE)
+```
+
+### Doing the exponential smoothing forecasts
+```{r}
+library(forecast)
+
+# Method 1
+ntrain <- length(vancouver_train_ts)
+ntotal <- length(vancouver_transformed_nhpi)
+
+vancouver_transformed_nhpi_train <- vancouver_transformed_nhpi[1:ntrain]
+vancouver_transformed_nhpi_holdout <- vancouver_transformed_nhpi[(ntrain+1):ntotal]
+
+# Simple Exponential Smoothing
+fit_expsmo <- HoltWinters(vancouver_train_ts, beta = FALSE, gamma = FALSE)
+vancouver_esm_fc <- esm_fc(vancouver_transformed_nhpi_train,
+                           vancouver_transformed_nhpi_holdout,
+                           alpha = fit_expsmo$alpha,
+                           level = fit_expsmo$coefficients["a"],
+                           iprint = FALSE)
+
+# Linear Exponential Smoothing
+fit_hw <- HoltWinters(vancouver_train_ts, gamma = FALSE)
+vancouver_holt_fc <- lholt_fc(vancouver_transformed_nhpi_train,
+                              vancouver_transformed_nhpi_holdout,
+                              alpha = fit_hw$alpha,
+                              beta = fit_hw$beta,
+                              level = fit_hw$coefficients["a"],
+                              slope = fit_hw$coefficients["b"],
+                              iprint = FALSE)
+
+# Additive Seasonal Exponential Smoothing (using ETS for stability)
+# We switched to ets() instead of HoltWinters() because it failed to converage for the Vancouver series.
+vancouver_aseason_fit <- ets(vancouver_train_ts, model = "AAA")
+summary(vancouver_aseason_fit)
+
+vancouver_aseason_forecast <- forecast(vancouver_aseason_fit,
+                                       h = length(vancouver_holdout_ts))
+
+vancouver_aseason_rmse <- sqrt(mean((vancouver_holdout_ts -
+                                     vancouver_aseason_forecast$mean)^2))
+
+# Comparing RMSE
+rmse_esm_vancouver <- cbind(vancouver_esm_fc$rmse,
+                            vancouver_holt_fc$rmse,
+                            vancouver_aseason_rmse)
+colnames(rmse_esm_vancouver) <- c("esm", "lholt", "aseason")
+rmse_esm_vancouver
+
+# Best exponential smoothing method: Simple Exponential Smoothing
+```
+
+### Doing the ARIMA forecasts
+```{r}
+# Method 2
+vancouver_auto_arima <- forecast::auto.arima(vancouver_train_ts)
+summary(vancouver_auto_arima)
+
+# Check residual ACF
+acf(residuals(vancouver_auto_arima),
+    main = "ACF of Vancouver auto.arima residuals")
+
+# Fit several nearby candidate ARIMA models manually
+
+fit1 <- arima(vancouver_train_ts,
+              order = c(1,0,1),
+              seasonal = list(order = c(1,0,0), period = 12),
+              method = "ML")
+
+fit2 <- arima(vancouver_train_ts,
+              order = c(1,0,2),
+              seasonal = list(order = c(1,0,0), period = 12),
+              method = "ML")
+
+fit3 <- arima(vancouver_train_ts,
+              order = c(2,0,1),
+              seasonal = list(order = c(1,0,0), period = 12),
+              method = "ML")
+
+fit4 <- arima(vancouver_train_ts,
+              order = c(2,0,2),
+              seasonal = list(order = c(1,0,0), period = 12),
+              method = "ML")
+
+fit5 <- arima(vancouver_train_ts,
+              order = c(1,0,2),
+              seasonal = list(order = c(1,0,1), period = 12),
+              method = "ML")
+
+# Compare AIC values
+aic_vancouver <- cbind(fit1$aic, fit2$aic, fit3$aic, fit4$aic, fit5$aic)
+colnames(aic_vancouver) <- c("fit1", "fit2", "fit3", "fit4", "fit5")
+aic_vancouver
+
+# Check residual ACFs
+acf(residuals(fit1), main = "ACF of fit1 residuals")
+acf(residuals(fit2), main = "ACF of fit2 residuals")
+acf(residuals(fit3), main = "ACF of fit3 residuals")
+acf(residuals(fit4), main = "ACF of fit4 residuals")
+acf(residuals(fit5), main = "ACF of fit5 residuals")
+
+# Choose the best candidate based on lowest AIC and ACF plot
+# fit3 has smallest aic, so we choose fit3
+order <- c(2,0,1)
+seasonal <- list(order = c(1,0,0), period = 12)
+
+# Fit the selected model on the training set
+train_arima_model <- arima(vancouver_train_ts,
+                           order = order,
+                           seasonal = seasonal,
+                           method = "ML",
+                           include.mean = TRUE)
+
+# Moving 1-step ahead forecasts for the holdout set
+vancouver_arima_results <- arma_fc(tsdata = vancouver_transformed_nhpi,
+                                   ntrain = length(vancouver_train_ts),
+                                   order = order,
+                                   seasonal = seasonal,
+                                   method = "ML",
+                                   traincoef = coef(train_arima_model),
+                                   include.mean = TRUE,
+                                   iprint = FALSE)
+
+vancouver_arima_results$rmse
+#0.004518064
+```
+
+### Doing the ARIMAX forecasts with lagged interest
+```{r}
+# Method 3
+vancouver_fit_arimax <- forecast::auto.arima(vancouver_train_ts,
+                                             xreg = vancouver_train_ir_xreg)
+summary(vancouver_fit_arimax)
+
+acf(residuals(vancouver_fit_arimax),
+    main = "ACF of Vancouver ARIMAX residuals")
+
+order <- c(2,0,1)
+seasonal <- list(order = c(1,0,0), period = 12)
+
+# Use the same ARIMA order as chosen above as a starting point
+train_arimax_model_vancouver <- arima(vancouver_train_ts,
+                                      order = order,
+                                      seasonal = seasonal,
+                                      xreg = vancouver_train_ir_xreg,
+                                      method = "ML",
+                                      include.mean = TRUE)
+
+# Getting the result of the moving 1-step ahead forecast for holdout set
+vancouver_arimax_results <- armax_fc(tsdata = vancouver_transformed_nhpi, ntrain = length(vancouver_train_ts),
+                                     order = order,
+                                     seasonal = seasonal,
+                                     xreg = vancouver_irlag1[-1],
+                                     method = "ML",
+                                     traincoef = coef(train_arimax_model_vancouver), include.mean = TRUE)
+
+vancouver_arimax_results$rmse
+#0.004444058
+```
+
+###  Viewing the results of Vancouver's analyses
+```{r}
+# 1. TIME SERIES PLOT
+plot(vancouver_ts, main = "Vancouver NHPI (Level)")
+plot(vancouver_transformed_nhpi, main = "Vancouver NHPI Log-Difference")
+
+# Forecast plots
+plot(ts(vancouver_persist_fc$fc, start = c(2022,1), frequency = 12),
+     main = "Vancouver Naive Forecast")
+plot(ts(vancouver_iid_fc$fc, start = c(2022,1), frequency = 12),
+     main = "Vancouver Training Mean Forecast")
+plot(ts(vancouver_esm_fc$fc, start = c(2022,1), frequency = 12),
+     main = "Vancouver Exponential Smoothing Forecast")
+plot(ts(vancouver_arima_results$fc, start = c(2022,1), frequency = 12),
+     main = "Vancouver ARIMA Forecast")
+plot(ts(vancouver_arimax_results$fc, start = c(2022,1), frequency = 12),
+     main = "Vancouver ARIMAX Forecast")
+plot(ts(vancouver_holdout_ts, start = c(2022,1), frequency = 12),
+     main = "Vancouver Holdout Series")
+
+# 2. ACF PLOT
+acf(vancouver_train_ts,
+    main = "ACF Plot: Log-differenced NHPI: Vancouver Training Set")
+pacf(vancouver_train_ts,
+     main = "PACF Plot: Log-differenced NHPI: Vancouver Training Set")
+
+acf(residuals(vancouver_auto_arima),
+    main = "ACF of ARIMA(2,0,1)(1,0,0)[12] residuals")
+
+acf(residuals(vancouver_fit_arimax),
+    main = "ACF of ARIMA(2,0,1)(1,0,0)[12] residuals")
+
+# 3. SUMMARY STATISTICS
+summary(vancouver_train_ts)
+summary(vancouver_holdout_ts)
+summary(vancouver_auto_arima)
+summary(vancouver_fit_arimax)
+
+# CCF between log-differenced NHPI and lagged interest rate
+ccf(vancouver_irlag1[-1], diff(log(vancouver_nhpi)),
+    main = "CCF: Lagged Interest Rate vs Log-Differenced Vancouver NHPI")
+
+# 4. RMSE
+vancouver_rmse <- cbind(vancouver_persist_fc$rmse,
+                        vancouver_iid_fc$rmse,
+                        vancouver_esm_fc$rmse,
+                        vancouver_arima_results$rmse,
+                        vancouver_arimax_results$rmse)
+colnames(vancouver_rmse) <- c("persist", "iid", "esm", "arima", "arimax")
+print(round(vancouver_rmse, 3))
+```
+
