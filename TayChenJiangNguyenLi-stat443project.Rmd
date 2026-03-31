@@ -455,6 +455,8 @@ arimax_results <- armax_fc(tsdata = montreal_transformed_nhpi,
                            ntrain = length(montreal_train_ts), order = order,
                            seasonal = seasonal, xreg = montreal_irlag1[-1],
                            method = "ML", traincoef = coef(train_arimax_model), include.mean = T)
+montreal_arima_results <- arima_results
+montreal_arimax_results <- arimax_results
 ```
 ### Viewing the results of Montreal's analyses
 ```{r}
@@ -646,6 +648,8 @@ seasonal <- list(order = c(1,0,0), period = 12)
 train_arimax_model <- arima(toronto_train_ts, order = order, seasonal = seasonal, xreg = toronto_train_ir_xreg, method = "ML", include.mean = T)
 # Getting the result of the moving 1-step ahead forecast for holdout set
 arimax_results <- armax_fc(tsdata = toronto_transformed_nhpi, ntrain = length(toronto_train_ts), order = order, seasonal = seasonal, xreg = toronto_irlag1[-1], method = "ML", traincoef = coef(train_arimax_model), include.mean = T)
+toronto_arima_results <- arima_results
+toronto_arimax_results <- arimax_results
 ```
 
 ### Viewing the results of Toronto's analyses
@@ -945,3 +949,47 @@ colnames(vancouver_rmse) <- c("persist", "iid", "esm", "arima", "arimax")
 print(round(vancouver_rmse, 3))
 ```
 
+## Final Comparison Table
+```{r}
+library(knitr)
+
+results_table <- data.frame(
+  City   = c("Montreal", "Toronto", "Vancouver"),
+  Persist = c(montreal_persist_fc$rmse,
+              toronto_persist_fc$rmse,
+              vancouver_persist_fc$rmse),
+  IID    = c(montreal_iid_fc$rmse,
+             toronto_iid_fc$rmse,
+             vancouver_iid_fc$rmse),
+  ESM    = c(montreal_holt_fc$rmse,    # Montreal best: Linear Holt
+             toronto_esm_fc$rmse,       # Toronto best: Simple ESM
+             vancouver_esm_fc$rmse),    # Vancouver best: Simple ESM
+  ARIMA  = c(montreal_arima_results$rmse,
+             toronto_arima_results$rmse,
+             vancouver_arima_results$rmse),
+  ARIMAX = c(montreal_arimax_results$rmse,
+             toronto_arimax_results$rmse,
+             vancouver_arimax_results$rmse)
+)
+
+# Average row
+avg_row <- data.frame(
+  City   = "Average",
+  Persist = mean(results_table$Persist),
+  IID    = mean(results_table$IID),
+  ESM    = mean(results_table$ESM),
+  ARIMA  = mean(results_table$ARIMA),
+  ARIMAX = mean(results_table$ARIMAX)
+)
+
+final_table <- rbind(results_table, avg_row)
+
+kable(final_table, digits = 4,
+      caption = "One-Step-Ahead Rolling Forecast RMSE by City and Method")
+
+# Best overall method
+avg_rmse <- colMeans(results_table[, -1])
+best_method <- names(which.min(avg_rmse))
+cat("Best overall method:", best_method,
+    "| Average RMSE =", round(min(avg_rmse), 4), "\n")
+```
