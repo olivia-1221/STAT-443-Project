@@ -1303,14 +1303,15 @@ avg_row <- data.frame(
 
 final_table <- rbind(results_table, avg_row)
 
-kable(final_table, digits = 3,
+kable(final_table, digits = 4,
       caption = "One-Step-Ahead Rolling Forecast RMSE by City and Method")
 
 # Best overall method
 avg_rmse <- colMeans(results_table[, -1])
 best_method <- names(which.min(avg_rmse))
 cat("Best overall method:", best_method,
-    "| Average RMSE =", round(min(avg_rmse), 3), "\n")
+    "| Average RMSE =", round(min(avg_rmse), 4), "\n")
+
 
 ```
 
