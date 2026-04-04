@@ -439,14 +439,111 @@ arima_results <- arma_fc(tsdata = montreal_transformed_nhpi,
                          traincoef = coef(train_arima_model), include.mean = T)
 arima_results$rmse
 ```
+### Compare candidate based on holdout rmse
+```{r}
+# Compare candidate ARIMA models using holdout RMSE
+rmse_manual_fit <- arma_fc(
+  tsdata = montreal_transformed_nhpi,
+  ntrain = length(montreal_train_ts),
+  order = c(2,0,5),
+  seasonal = list(order = c(2,0,1), period = 12),
+  method = "ML",
+  traincoef = coef(manual_fit),
+  include.mean = TRUE,
+  iprint = FALSE
+)$rmse
+
+rmse_test1 <- arma_fc(
+  tsdata = montreal_transformed_nhpi,
+  ntrain = length(montreal_train_ts),
+  order = c(2,0,4),
+  seasonal = list(order = c(2,0,1), period = 12),
+  method = "ML",
+  traincoef = coef(test1),
+  include.mean = TRUE,
+  iprint = FALSE
+)$rmse
+
+rmse_test2 <- arma_fc(
+  tsdata = montreal_transformed_nhpi,
+  ntrain = length(montreal_train_ts),
+  order = c(3,0,4),
+  seasonal = list(order = c(2,0,1), period = 12),
+  method = "ML",
+  traincoef = coef(test2),
+  include.mean = TRUE,
+  iprint = FALSE
+)$rmse
+
+rmse_test3 <- arma_fc(
+  tsdata = montreal_transformed_nhpi,
+  ntrain = length(montreal_train_ts),
+  order = c(3,0,5),
+  seasonal = list(order = c(2,0,1), period = 12),
+  method = "ML",
+  traincoef = coef(test3),
+  include.mean = TRUE,
+  iprint = FALSE
+)$rmse
+
+rmse_test4 <- arma_fc(
+  tsdata = montreal_transformed_nhpi,
+  ntrain = length(montreal_train_ts),
+  order = c(2,0,5),
+  seasonal = list(order = c(2,0,2), period = 12),
+  method = "ML",
+  traincoef = coef(test4),
+  include.mean = TRUE,
+  iprint = FALSE
+)$rmse
+
+rmse_test5 <- arma_fc(
+  tsdata = montreal_transformed_nhpi,
+  ntrain = length(montreal_train_ts),
+  order = c(2,0,4),
+  seasonal = list(order = c(2,0,2), period = 12),
+  method = "ML",
+  traincoef = coef(test5),
+  include.mean = TRUE,
+  iprint = FALSE
+)$rmse
+
+# Put all candidate RMSE values into one table
+arima_rmse_compare <- data.frame(
+  model = c(
+    "ARIMA(2,0,5)(2,0,1)[12]",
+    "ARIMA(2,0,4)(2,0,1)[12]",
+    "ARIMA(3,0,4)(2,0,1)[12]",
+    "ARIMA(3,0,5)(2,0,1)[12]",
+    "ARIMA(2,0,5)(2,0,2)[12]",
+    "ARIMA(2,0,4)(2,0,2)[12]"
+  ),
+  rmse = c(
+    rmse_manual_fit,
+    rmse_test1,
+    rmse_test2,
+    rmse_test3,
+    rmse_test4,
+    rmse_test5
+  )
+)
+
+arima_rmse_compare
+
+best_arima_model_M <- "ARIMA(2,0,5)(2,0,2)[12]"
+best_arima_rmse_M <- 0.007296657
+
+```
+
+
 ### Doing the ARIMAX forecasts with lagged interest
 ```{r}
 # Method 3
 montreal_fit_arimax <- forecast::auto.arima(montreal_train_ts, xreg = montreal_train_ir_xreg)
 summary(montreal_fit_arimax)
 
-order <- c(3,0,5)
-seasonal <- list(order = c(2,0,1), period = 12)
+order <- c(2,0,5)
+seasonal <- list(order = c(2,0,2), period = 12)
 # Fitting a model to the training data
 train_arimax_model <- arima(montreal_train_ts, order = order, seasonal = seasonal,
                             xreg = montreal_train_ir_xreg, method = "ML", include.mean = T)
@@ -457,6 +554,17 @@ arimax_results <- armax_fc(tsdata = montreal_transformed_nhpi,
                            method = "ML", traincoef = coef(train_arimax_model), include.mean = T)
 montreal_arima_results <- arima_results
 montreal_arimax_results <- arimax_results
+
+best_arimax_model_M <- "ARIMAX(2,0,5)(2,0,2)[12]" 
+best_arimax_rmse_M  <- montreal_arimax_results$rmse
+
+montreal_best <- data.frame(
+  City = "Montreal",
+  ARIMA_Model = best_arima_model_M,
+  ARIMA_RMSE = round(best_arima_rmse_M, 3),
+  ARIMAX_Model = best_arimax_model_M,
+  ARIMAX_RMSE = round(best_arimax_rmse_M, 3)
+)
 ```
 ### Viewing the results of Montreal's analyses
 ```{r}
@@ -483,10 +591,10 @@ acf(montreal_train_ts, main = "ACF Plot: of Log-differenced NHPI: Montreal Train
 pacf(montreal_train_ts, main = "PACF Plot: of Log-differenced NHPI: Montreal Training Set")
 # ACF from best ARIMA model
 resid_fit <- residuals(montreal_transformed_nphi_auto)
-acf(resid_fit, main = "ACF of ARIMA(3,0,5)(2,0,1)[12] residuals")
+acf(resid_fit, main = "ACF of ARIMA(2,0,5)(2,0,2)[12] residuals")
 # ACF from best ARIMAX model
 resid_fit <- residuals(montreal_fit_arimax)
-acf(resid_fit, main = "ACF of ARIMAX(3,0,5)(2,0,1)[12] residuals")
+acf(resid_fit, main = "ACF of ARIMAX(2,0,5)(2,0,2)[12] residuals")
 
 # 3. SUMMARY STATISTICS
 summary(montreal_train_ts)
@@ -635,6 +743,102 @@ arima_results <- arma_fc(tsdata = toronto_transformed_nhpi,
                          traincoef = coef(train_arima_model), include.mean = T)
 arima_results$rmse
 ```
+### Compare models based on holdout rmse
+```{r}
+# Compare candidate ARIMA models using holdout RMSE
+
+rmse_manual_fit <- arma_fc(
+  tsdata = toronto_transformed_nhpi,
+  ntrain = length(toronto_train_ts),
+  order = c(1,0,2),
+  seasonal = list(order = c(1,0,0), period = 12),
+  method = "ML",
+  traincoef = coef(manual_fit),
+  include.mean = TRUE,
+  iprint = FALSE
+)$rmse
+
+rmse_test1 <- arma_fc(
+  tsdata = toronto_transformed_nhpi,
+  ntrain = length(toronto_train_ts),
+  order = c(1,0,1),
+  seasonal = list(order = c(1,0,0), period = 12),
+  method = "ML",
+  traincoef = coef(test1),
+  include.mean = TRUE,
+  iprint = FALSE
+)$rmse
+
+rmse_test2 <- arma_fc(
+  tsdata = toronto_transformed_nhpi,
+  ntrain = length(toronto_train_ts),
+  order = c(2,0,1),
+  seasonal = list(order = c(1,0,0), period = 12),
+  method = "ML",
+  traincoef = coef(test2),
+  include.mean = TRUE,
+  iprint = FALSE
+)$rmse
+
+rmse_test3 <- arma_fc(
+  tsdata = toronto_transformed_nhpi,
+  ntrain = length(toronto_train_ts),
+  order = c(2,0,2),
+  seasonal = list(order = c(1,0,0), period = 12),
+  method = "ML",
+  traincoef = coef(test3),
+  include.mean = TRUE,
+  iprint = FALSE
+)$rmse
+
+rmse_test4 <- arma_fc(
+  tsdata = toronto_transformed_nhpi,
+  ntrain = length(toronto_train_ts),
+  order = c(1,0,2),
+  seasonal = list(order = c(1,0,1), period = 12),
+  method = "ML",
+  traincoef = coef(test4),
+  include.mean = TRUE,
+  iprint = FALSE
+)$rmse
+
+rmse_test5 <- arma_fc(
+  tsdata = toronto_transformed_nhpi,
+  ntrain = length(toronto_train_ts),
+  order = c(1,0,1),
+  seasonal = list(order = c(1,0,1), period = 12),
+  method = "ML",
+  traincoef = coef(test5),
+  include.mean = TRUE,
+  iprint = FALSE
+)$rmse
+
+# Put all candidate RMSE values into one table
+arima_rmse_compare <- data.frame(
+  model = c(
+    "ARIMA(1,0,2)(1,0,0)[12]",
+    "ARIMA(1,0,1)(1,0,0)[12]",
+    "ARIMA(2,0,1)(1,0,0)[12]",
+    "ARIMA(2,0,2)(1,0,0)[12]",
+    "ARIMA(1,0,2)(1,0,1)[12]",
+    "ARIMA(1,0,1)(1,0,1)[12]"
+  ),
+  rmse = c(
+    rmse_manual_fit,
+    rmse_test1,
+    rmse_test2,
+    rmse_test3,
+    rmse_test4,
+    rmse_test5
+  )
+)
+
+arima_rmse_compare
+
+best_arima_model_T <- "ARIMA(1,0,2)(1,0,0)[12]"
+best_arima_rmse_T <- 0.002048750
+
+```
 
 ### Doing the ARIMAX forecasts with lagged interest
 ```{r}
@@ -650,6 +854,17 @@ train_arimax_model <- arima(toronto_train_ts, order = order, seasonal = seasonal
 arimax_results <- armax_fc(tsdata = toronto_transformed_nhpi, ntrain = length(toronto_train_ts), order = order, seasonal = seasonal, xreg = toronto_irlag1[-1], method = "ML", traincoef = coef(train_arimax_model), include.mean = T)
 toronto_arima_results <- arima_results
 toronto_arimax_results <- arimax_results
+
+best_arimax_model_T <- "ARIMAX(1,0,2)(1,0,0)[12]" 
+best_arimax_rmse_T  <- toronto_arimax_results$rmse
+
+toronto_best <- data.frame(
+  City = "Toronto",
+  ARIMA_Model = best_arima_model_T,
+  ARIMA_RMSE = round(best_arima_rmse_T, 3),
+  ARIMAX_Model = best_arimax_model_T,
+  ARIMAX_RMSE = round(best_arimax_rmse_T, 3)
+)
 ```
 
 ### Viewing the results of Toronto's analyses
@@ -861,8 +1076,91 @@ vancouver_arima_results <- arma_fc(tsdata = vancouver_transformed_nhpi,
                                    iprint = FALSE)
 
 vancouver_arima_results$rmse
-#0.004518064
 ```
+### Compare models using holdout rmse
+```{r}
+# Compare candidate ARIMA models using holdout RMSE
+
+rmse_fit1 <- arma_fc(
+  tsdata = vancouver_transformed_nhpi,
+  ntrain = length(vancouver_train_ts),
+  order = c(1,0,1),
+  seasonal = list(order = c(1,0,0), period = 12),
+  method = "ML",
+  traincoef = coef(fit1),
+  include.mean = TRUE,
+  iprint = FALSE
+)$rmse
+
+rmse_fit2 <- arma_fc(
+  tsdata = vancouver_transformed_nhpi,
+  ntrain = length(vancouver_train_ts),
+  order = c(1,0,2),
+  seasonal = list(order = c(1,0,0), period = 12),
+  method = "ML",
+  traincoef = coef(fit2),
+  include.mean = TRUE,
+  iprint = FALSE
+)$rmse
+
+rmse_fit3 <- arma_fc(
+  tsdata = vancouver_transformed_nhpi,
+  ntrain = length(vancouver_train_ts),
+  order = c(2,0,1),
+  seasonal = list(order = c(1,0,0), period = 12),
+  method = "ML",
+  traincoef = coef(fit3),
+  include.mean = TRUE,
+  iprint = FALSE
+)$rmse
+
+rmse_fit4 <- arma_fc(
+  tsdata = vancouver_transformed_nhpi,
+  ntrain = length(vancouver_train_ts),
+  order = c(2,0,2),
+  seasonal = list(order = c(1,0,0), period = 12),
+  method = "ML",
+  traincoef = coef(fit4),
+  include.mean = TRUE,
+  iprint = FALSE
+)$rmse
+
+rmse_fit5 <- arma_fc(
+  tsdata = vancouver_transformed_nhpi,
+  ntrain = length(vancouver_train_ts),
+  order = c(1,0,2),
+  seasonal = list(order = c(1,0,1), period = 12),
+  method = "ML",
+  traincoef = coef(fit5),
+  include.mean = TRUE,
+  iprint = FALSE
+)$rmse
+
+# Put all candidate RMSE values into one table
+arima_rmse_compare <- data.frame(
+  model = c(
+    "ARIMA(1,0,1)(1,0,0)[12]",
+    "ARIMA(1,0,2)(1,0,0)[12]",
+    "ARIMA(2,0,1)(1,0,0)[12]",
+    "ARIMA(2,0,2)(1,0,0)[12]",
+    "ARIMA(1,0,2)(1,0,1)[12]"
+  ),
+  rmse = c(
+    rmse_fit1,
+    rmse_fit2,
+    rmse_fit3,
+    rmse_fit4,
+    rmse_fit5
+  )
+)
+
+arima_rmse_compare
+
+best_arima_model_V <- "ARIMA(1,0,2)(1,0,1)[12]"
+best_arima_rmse_V <- 0.004501499
+
+```
+
 
 ### Doing the ARIMAX forecasts with lagged interest
 ```{r}
@@ -874,8 +1172,8 @@ summary(vancouver_fit_arimax)
 acf(residuals(vancouver_fit_arimax),
     main = "ACF of Vancouver ARIMAX residuals")
 
-order <- c(2,0,1)
-seasonal <- list(order = c(1,0,0), period = 12)
+order <- c(1,0,2)
+seasonal <- list(order = c(1,0,1), period = 12)
 
 # Use the same ARIMA order as chosen above as a starting point
 train_arimax_model_vancouver <- arima(vancouver_train_ts,
@@ -894,7 +1192,17 @@ vancouver_arimax_results <- armax_fc(tsdata = vancouver_transformed_nhpi, ntrain
                                      traincoef = coef(train_arimax_model_vancouver), include.mean = TRUE)
 
 vancouver_arimax_results$rmse
-#0.004444058
+
+best_arimax_model_V <- "ARIMAX(1,0,2)(1,0,1)[12]" 
+best_arimax_rmse_V  <- vancouver_arimax_results$rmse
+
+vancouver_best <- data.frame(
+  City = "Vancouver",
+  ARIMA_Model = best_arima_model_V,
+  ARIMA_RMSE = round(best_arima_rmse_V, 3),
+  ARIMAX_Model = best_arimax_model_V,
+  ARIMAX_RMSE = round(best_arimax_rmse_V, 3)
+)
 ```
 
 ###  Viewing the results of Vancouver's analyses
@@ -924,10 +1232,10 @@ pacf(vancouver_train_ts,
      main = "PACF Plot: Log-differenced NHPI: Vancouver Training Set")
 
 acf(residuals(vancouver_auto_arima),
-    main = "ACF of ARIMA(2,0,1)(1,0,0)[12] residuals")
+    main = "ACF of ARIMA(1,0,2)(1,0,1)[12] residuals")
 
 acf(residuals(vancouver_fit_arimax),
-    main = "ACF of ARIMA(2,0,1)(1,0,0)[12] residuals")
+    main = "ACF of ARIMA(1,0,2)(1,0,1)[12] residuals")
 
 # 3. SUMMARY STATISTICS
 summary(vancouver_train_ts)
@@ -948,6 +1256,17 @@ vancouver_rmse <- cbind(vancouver_persist_fc$rmse,
 colnames(vancouver_rmse) <- c("persist", "iid", "esm", "arima", "arimax")
 print(round(vancouver_rmse, 3))
 ```
+### Create the best ARIMA and ARMAX/ARIMAX models that found based on holdout set RMSE
+```{r}
+best_model_table <- rbind(
+  montreal_best,
+  toronto_best,
+  vancouver_best
+)
+
+best_model_table
+
+```
 
 ## Final Comparison Table
 ```{r}
@@ -961,9 +1280,9 @@ results_table <- data.frame(
   IID    = c(montreal_iid_fc$rmse,
              toronto_iid_fc$rmse,
              vancouver_iid_fc$rmse),
-  ESM    = c(montreal_holt_fc$rmse,    # Montreal best: Linear Holt
-             toronto_esm_fc$rmse,       # Toronto best: Simple ESM
-             vancouver_esm_fc$rmse),    # Vancouver best: Simple ESM
+  ESM    = c(montreal_holt_fc$rmse,    
+             toronto_esm_fc$rmse,      
+             vancouver_esm_fc$rmse),    
   ARIMA  = c(montreal_arima_results$rmse,
              toronto_arima_results$rmse,
              vancouver_arima_results$rmse),
@@ -984,12 +1303,14 @@ avg_row <- data.frame(
 
 final_table <- rbind(results_table, avg_row)
 
-kable(final_table, digits = 4,
+kable(final_table, digits = 3,
       caption = "One-Step-Ahead Rolling Forecast RMSE by City and Method")
 
 # Best overall method
 avg_rmse <- colMeans(results_table[, -1])
 best_method <- names(which.min(avg_rmse))
 cat("Best overall method:", best_method,
-    "| Average RMSE =", round(min(avg_rmse), 4), "\n")
+    "| Average RMSE =", round(min(avg_rmse), 3), "\n")
+
 ```
+
