@@ -529,6 +529,9 @@ arima_rmse_compare <- data.frame(
 )
 
 arima_rmse_compare
+montreal_arima_rmse_compare <- arima_rmse_compare
+
+
 
 best_arima_model_M <- "ARIMA(2,0,5)(2,0,2)[12]"
 best_arima_rmse_M <- 0.007296657
@@ -834,6 +837,7 @@ arima_rmse_compare <- data.frame(
 )
 
 arima_rmse_compare
+toronto_arima_rmse_compare <- arima_rmse_compare
 
 best_arima_model_T <- "ARIMA(1,0,2)(1,0,0)[12]"
 best_arima_rmse_T <- 0.002048750
@@ -1155,7 +1159,7 @@ arima_rmse_compare <- data.frame(
 )
 
 arima_rmse_compare
-
+vancouver_arima_rmse_compare <- arima_rmse_compare
 best_arima_model_V <- "ARIMA(1,0,2)(1,0,1)[12]"
 best_arima_rmse_V <- 0.004501499
 
@@ -1265,6 +1269,37 @@ best_model_table <- rbind(
 )
 
 best_model_table
+
+```
+
+### Create a list table include other fitted ARIMA models
+```{r}
+montreal_candidates <- montreal_arima_rmse_compare
+toronto_candidates <- toronto_arima_rmse_compare
+vancouver_candidates <- vancouver_arima_rmse_compare
+
+montreal_candidates$City <- "Montreal"
+toronto_candidates$City <- "Toronto"
+vancouver_candidates$City <- "Vancouver"
+
+montreal_candidates <- montreal_candidates[, c("City", "model", "rmse")]
+toronto_candidates  <- toronto_candidates[, c("City", "model", "rmse")]
+vancouver_candidates <- vancouver_candidates[, c("City", "model", "rmse")]
+
+# Combine all cities
+all_arima_candidates <- rbind(
+  montreal_candidates,
+  toronto_candidates,
+  vancouver_candidates
+)
+
+all_arima_candidates$rmse <- round(all_arima_candidates$rmse, 3)
+
+colnames(all_arima_candidates) <- c("City", "Candidate_ARIMA_Model", "Holdout_RMSE")
+
+# Show the full combined table
+all_arima_candidates
+
 
 ```
 
