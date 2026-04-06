@@ -3,7 +3,7 @@
 # STAT 443 Project - Data Wrangling
 # Authors: Tay, Chen, Jiang, Nguyen, Li
 # Description: Load raw data, merge NHPI with interest rate, compute lags,
-#              and export city-level CSV files for downstream analyses.
+#              and save wrangled data for downstream analyses.
 # =============================================================================
 
 library(readr)
@@ -36,7 +36,7 @@ nhpi_ir <- nhpi_full %>%
   left_join(ir %>% select(REF_DATE_ym, IR), by = "REF_DATE_ym") %>%
   filter(REF_DATE <= as.Date("2023-12-01"))
 
-# Compute lagged interest rates (1-month and 2-month lag)
+# Compute lagged interest rates
 nhpi_ir <- nhpi_ir %>%
   group_by(GEO, New.housing.price.indexes) %>%
   arrange(REF_DATE) %>%
@@ -54,7 +54,7 @@ range(nhpi_ir$REF_DATE)    # 1981-01-01 to 2023-12-01
 mean(is.na(nhpi_ir$IR))    # should be ~0
 
 # -----------------------------------------------------------------------------
-# 4. Save wrangled data for downstream scripts
+# 4. Save
 # -----------------------------------------------------------------------------
 
 save(nhpi_full, ir, nhpi_ir, file = "wrangled_data.RData")

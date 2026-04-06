@@ -2,8 +2,8 @@
 # 05_forecast_comparison.R
 # STAT 443 Project - Final Forecast Comparison
 # Authors: Tay, Chen, Jiang, Nguyen, Li
-# Description: Combine holdout RMSE from all methods and cities into a
-#              final comparison table. Identify best overall method.
+# Description: Combine holdout RMSE from all methods into a final comparison
+#              table. Identify best overall method.
 # =============================================================================
 
 library(knitr)
@@ -13,8 +13,8 @@ load("arima_results.RData")
 load("arimax_results.RData")
 
 # -----------------------------------------------------------------------------
-# Build comparison table
-# Note: Best ESM per city:
+# Final RMSE comparison table
+# Best ESM per city:
 #   Montreal  -> Linear Holt  (montreal_holt_fc)
 #   Toronto   -> Simple ESM   (toronto_esm_fc)
 #   Vancouver -> Simple ESM   (vancouver_esm_fc)
@@ -39,7 +39,6 @@ results_table <- data.frame(
               vancouver_arimax_results$rmse)
 )
 
-# Average row
 avg_row <- data.frame(
   City    = "Average",
   Persist = mean(results_table$Persist),
@@ -50,8 +49,6 @@ avg_row <- data.frame(
 )
 
 final_table <- rbind(results_table, avg_row)
-
-# Print table
 print(kable(final_table, digits = 4,
             caption = "One-Step-Ahead Rolling Forecast RMSE by City and Method"))
 
@@ -61,6 +58,23 @@ best_method <- names(which.min(avg_rmse))
 cat("\nBest overall method:", best_method,
     "| Average RMSE =", round(min(avg_rmse), 4), "\n")
 
-# Save final table
-write.csv(final_table, "final_rmse_table.csv", row.names = FALSE)
-message("Saved: final_rmse_table.csv")
+# -----------------------------------------------------------------------------
+# Best ARIMA and ARIMAX models per city (for report)
+# -----------------------------------------------------------------------------
+
+print(best_model_table)
+
+# -----------------------------------------------------------------------------
+# All candidate ARIMA models (for Appendix)
+# -----------------------------------------------------------------------------
+
+print(all_arima_candidates)
+
+# -----------------------------------------------------------------------------
+# Save
+# -----------------------------------------------------------------------------
+
+write.csv(final_table,        "final_rmse_table.csv",      row.names = FALSE)
+write.csv(best_model_table,   "best_model_table.csv",      row.names = FALSE)
+write.csv(all_arima_candidates, "all_arima_candidates.csv", row.names = FALSE)
+message("Saved: final_rmse_table.csv, best_model_table.csv, all_arima_candidates.csv")
