@@ -11,6 +11,7 @@ library(readr)
 library(dplyr)
 library(lubridate)
 
+## 1. Read and prepare the full NHPI dataset
 # Covers 1981-01 to 2025-12
 nhpi_full <- read.csv(
   "18100205-eng/18100205.csv",
@@ -23,6 +24,7 @@ nhpi_full <- read.csv(
 
 head(nhpi_full)
 
+## 2. Read and prepare the interest-rate dataset
 # Covers 1981-01 to 2023-12
 ir <- read_csv(
   "IRSTCB01CAM156N.csv",
@@ -41,6 +43,7 @@ ir <- read_csv(
 
 head(ir)
 
+## 3. Merge NHPI with interest rates for ARMAX/ARIMAX analysis
 # Keep overlap only: 1981-01 to 2023-12
 nhpi_ir <- nhpi_full %>%
   left_join(
@@ -58,6 +61,7 @@ nhpi_ir <- nhpi_full %>%
 
 head(nhpi_ir)
 
+## 4. Sanity checks
 range(nhpi_full$REF_DATE)   # should be 1981-01-01 to 2025-12-01
 range(ir$REF_DATE)          # should be 1981-01-01 to 2023-12-01
 range(nhpi_ir$REF_DATE)     # should be 1981-01-01 to 2023-12-01
@@ -68,12 +72,14 @@ nhpi_ir %>%
   select(REF_DATE, VALUE, IR, IR_lag1, IR_lag2) %>%
   head(5)
 
+## 5. Save merged dataset for later ARMAX/ARIMAX modeling
 write.csv(
   nhpi_ir,
   "nhpi_with_interest_rate_1981_2023.csv",
   row.names = FALSE
 )
 
+## 6. Extract city-level ARMAX datasets (1981-2023)
 cities <- c(
   "Toronto, Ontario",
   "Vancouver, British Columbia",
@@ -106,6 +112,7 @@ write.csv(vancouver, "vancouver.csv", row.names = FALSE)
 write.csv(montreal, "montreal.csv", row.names = FALSE)
 write.csv(quebec, "quebec.csv", row.names = FALSE)
 
+## 7. Extract full-horizon univariate city datasets (1981-2025)
 city_full <- nhpi_full %>%
   filter(
     GEO %in% cities,
@@ -131,3 +138,11 @@ write.csv(vancouver_full, "vancouver_full.csv", row.names = FALSE)
 write.csv(montreal_full, "montreal_full.csv", row.names = FALSE)
 write.csv(quebec_full, "quebec_full.csv", row.names = FALSE)
 
+## 8. Final objects created by this script
+
+# `nhpi_full`: full NHPI dataset, 1981-2025
+# `ir`: monthly interest-rate dataset, 1981-2023
+# `nhpi_ir`: merged NHPI + interest-rate dataset, 1981-2023
+# `city_armax`: city-level ARMAX-ready dataset
+# `city_full`: city-level full-horizon univariate dataset
+# Saved CSV files for Toronto, Vancouver, Montréal, and Québec
